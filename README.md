@@ -1,6 +1,6 @@
 # bla_policy_companion
 
-A new Flutter project.
+For Day 1
 
 ## Getting Started
 
