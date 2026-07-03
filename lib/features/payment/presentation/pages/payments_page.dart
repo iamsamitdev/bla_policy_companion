@@ -1,22 +1,57 @@
 // lib/features/payment/presentation/pages/payments_page.dart
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:skeletonizer/skeletonizer.dart';
 
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/utils/date_format.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/gradient_header.dart';
 import '../../../../core/widgets/section_label.dart';
 import '../../../../core/widgets/status_badge.dart';
+import '../../domain/payment.dart';
+import '../controllers/payment_history_controller.dart';
 
 /// หน้าชำระเบี้ย — บิลครบกำหนด + ช่องทางชำระ + ประวัติการชำระ
-/// Day 1: static — Day 2 จะทำประวัติแบบ Pagination (Infinite Scroll) จาก API
-class PaymentsPage extends StatelessWidget {
+/// Day 2: ประวัติการชำระเป็น Pagination / Infinite Scroll จาก API จริง
+class PaymentsPage extends ConsumerStatefulWidget {
   const PaymentsPage({super.key});
 
   @override
+  ConsumerState<PaymentsPage> createState() => _PaymentsPageState();
+}
+
+class _PaymentsPageState extends ConsumerState<PaymentsPage> {
+  final _scroll = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scroll.removeListener(_onScroll);
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  // เลื่อนใกล้ท้าย list → โหลดหน้าถัดไป (Infinite Scroll)
+  void _onScroll() {
+    if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 300) {
+      ref.read(paymentHistoryControllerProvider.notifier).loadMore();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final async = ref.watch(paymentHistoryControllerProvider);
+    final hasMore = ref.read(paymentHistoryControllerProvider.notifier).hasMore;
+
     return Column(
       children: [
         const GradientHeader(
@@ -24,114 +59,156 @@ class PaymentsPage extends StatelessWidget {
           subtitle: 'จ่ายเบี้ยและดูประวัติ',
         ),
         Expanded(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-            children: [
-              // การ์ดบิลครบกำหนด (gradient)
-              Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  gradient: AppColors.primaryGradient,
-                  borderRadius: BorderRadius.circular(AppSpacing.rLg),
+          child: RefreshIndicator(
+            onRefresh: () =>
+                ref.read(paymentHistoryControllerProvider.notifier).refresh(),
+            child: ListView(
+              controller: _scroll,
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+              children: [
+                _DueCard(),
+                const SizedBox(height: 8),
+                const SectionLabel('ช่องทางชำระเงิน'),
+                _MethodTile(
+                  icon: HugeIcons.strokeRoundedQrCode,
+                  title: 'พร้อมเพย์ / QR',
+                  subtitle: 'ตัดผ่านบัญชีธนาคาร',
+                  trailing: const StatusBadge(
+                    label: 'ค่าเริ่มต้น',
+                    tone: BadgeTone.info,
+                  ),
+                  selected: true,
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white24,
-                        borderRadius: BorderRadius.circular(AppSpacing.rPill),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const HugeIcon(
-                            icon: HugeIcons.strokeRoundedClock01,
-                            size: 14,
-                            color: Colors.white,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'ครบกำหนดอีก 17 วัน',
-                            style: AppType.tiny.copyWith(color: Colors.white),
-                          ),
-                        ],
-                      ),
+                const SizedBox(height: 10),
+                _MethodTile(
+                  icon: HugeIcons.strokeRoundedCreditCard,
+                  title: 'บัตรเครดิต ••6789',
+                  subtitle: 'KBank Visa Platinum',
+                  trailing: const HugeIcon(
+                    icon: HugeIcons.strokeRoundedArrowRight01,
+                    color: AppColors.textSubtle,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                DottedAddBox(label: 'เพิ่มช่องทางชำระเงิน', onTap: () {}),
+                const SizedBox(height: 8),
+                const SectionLabel('ประวัติการชำระ'),
+                // ประวัติ: loading (skeleton) / error / data + ตัวโหลดท้าย list
+                ...async.when(
+                  loading: () => List.generate(
+                    5,
+                    (_) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Skeletonizer(child: _PaymentTile(_fakePayment)),
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'BLA สะสมทรัพย์ 10/5',
-                      style: AppType.body.copyWith(color: Colors.white70),
-                    ),
-                    Text(
-                      '฿50,000',
-                      style: AppType.display.copyWith(color: Colors.white),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'กำหนดชำระ 15 ก.ค. 2569 · BLA-2569-0002',
-                      style: AppType.caption.copyWith(color: Colors.white70),
-                    ),
-                    const SizedBox(height: 14),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: () {},
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: AppColors.primary,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        icon: const HugeIcon(
-                          icon: HugeIcons.strokeRoundedCreditCard,
-                          size: 18,
-                        ),
-                        label: const Text('จ่ายตอนนี้'),
-                      ),
+                  ),
+                  error: (e, _) => [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 24),
+                      child: Center(child: Text('โหลดประวัติไม่สำเร็จ: $e')),
                     ),
                   ],
+                  data: (list) => [
+                    ...list.map(
+                      (p) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _PaymentTile(p),
+                      ),
+                    ),
+                    if (hasMore)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Center(
+                          child: SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 8),
-              const SectionLabel('ช่องทางชำระเงิน'),
-              _MethodTile(
-                icon: HugeIcons.strokeRoundedQrCode,
-                title: 'พร้อมเพย์ / QR',
-                subtitle: 'ตัดผ่านบัญชีธนาคาร',
-                trailing: const StatusBadge(
-                  label: 'ค่าเริ่มต้น',
-                  tone: BadgeTone.info,
-                ),
-                selected: true,
-              ),
-              const SizedBox(height: 10),
-              _MethodTile(
-                icon: HugeIcons.strokeRoundedCreditCard,
-                title: 'บัตรเครดิต ••6789',
-                subtitle: 'KBank Visa Platinum',
-                trailing: const HugeIcon(
-                  icon: HugeIcons.strokeRoundedArrowRight01,
-                  color: AppColors.textSubtle,
-                ),
-              ),
-              const SizedBox(height: 10),
-              _AddMethod(),
-              const SizedBox(height: 8),
-              const SectionLabel('ประวัติการชำระ'),
-              ..._payments.map(
-                (p) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _PaymentTile(p),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ],
+    );
+  }
+}
+
+final _fakePayment = Payment(
+  id: 'PMT-0000',
+  title: 'ชำระเบี้ยงวดที่ 0',
+  amount: 0,
+  paidAt: DateTime(2569),
+);
+
+class _DueCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: AppColors.primaryGradient,
+        borderRadius: BorderRadius.circular(AppSpacing.rLg),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white24,
+              borderRadius: BorderRadius.circular(AppSpacing.rPill),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const HugeIcon(
+                  icon: HugeIcons.strokeRoundedClock01,
+                  size: 14,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'ครบกำหนดอีก 17 วัน',
+                  style: AppType.tiny.copyWith(color: Colors.white),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'BLA สะสมทรัพย์ 10/5',
+            style: AppType.body.copyWith(color: Colors.white70),
+          ),
+          Text('฿50,000', style: AppType.display.copyWith(color: Colors.white)),
+          const SizedBox(height: 2),
+          Text(
+            'กำหนดชำระ 15 ก.ค. 2569 · BLA-2569-0002',
+            style: AppType.caption.copyWith(color: Colors.white70),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () {},
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: AppColors.primary,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+              icon: const HugeIcon(
+                icon: HugeIcons.strokeRoundedCreditCard,
+                size: 18,
+              ),
+              label: const Text('จ่ายตอนนี้'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -182,13 +259,6 @@ class _MethodTile extends StatelessWidget {
   }
 }
 
-class _AddMethod extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return DottedAddBox(label: 'เพิ่มช่องทางชำระเงิน', onTap: () {});
-  }
-}
-
 /// กล่องปุ่ม "เพิ่ม" แบบเส้นประ — reusable
 class DottedAddBox extends StatelessWidget {
   final String label;
@@ -224,7 +294,7 @@ class DottedAddBox extends StatelessWidget {
 }
 
 class _PaymentTile extends StatelessWidget {
-  final _Payment p;
+  final Payment p;
   const _PaymentTile(this.p);
 
   @override
@@ -252,32 +322,13 @@ class _PaymentTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(p.title, style: AppType.bodyStrong),
-                Text('${p.date} · ${p.method}', style: AppType.caption),
+                Text(thaiDate(p.paidAt), style: AppType.caption),
               ],
             ),
           ),
-          Text('฿${p.amount}', style: AppType.h3),
+          Text('฿${money(p.amount)}', style: AppType.h3),
         ],
       ),
     );
   }
 }
-
-class _Payment {
-  final String title;
-  final String date;
-  final String method;
-  final String amount;
-  const _Payment(this.title, this.date, this.method, this.amount);
-}
-
-const _payments = [
-  _Payment('BLA ตลอดชีพ มั่นคง 99', '1 ม.ค. 2569', 'พร้อมเพย์ / QR', '24,000'),
-  _Payment('BLA บำนาญมั่นคง 60', '10 ส.ค. 2568', 'บัตรเครดิต ••6789', '36,000'),
-  _Payment(
-    'BLA คุ้มครองสุขภาพ พลัส',
-    '5 มี.ค. 2568',
-    'พร้อมเพย์ / QR',
-    '18,500',
-  ),
-];

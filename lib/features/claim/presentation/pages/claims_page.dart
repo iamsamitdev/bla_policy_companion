@@ -199,11 +199,22 @@ class _ClaimCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                '${c.claimRef} · ${thaiDate(c.submittedAt)}',
-                style: AppType.caption,
+              Expanded(
+                child: Text(
+                  '${c.claimRef} · ${thaiDate(c.submittedAt)}',
+                  style: AppType.caption,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              Text('฿${money(c.amount)}', style: AppType.h3),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  '฿${money(c.amount)}',
+                  style: AppType.h3,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.right,
+                ),
+              ),
             ],
           ),
         ],
