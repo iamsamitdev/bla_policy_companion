@@ -1,38 +1,45 @@
 // lib/features/claim/presentation/widgets/file_claim_sheet.dart
-import 'dart:math';
-
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../../../core/theme/app_colors.dart';
-import '../../../../../../core/icons/app_icons.dart';
-import '../../../../../../core/theme/app_spacing.dart';
-import '../../../../../../core/theme/app_typography.dart';
-import '../../../../../../core/widgets/app_button.dart';
-import '../../../../../../core/widgets/app_text_field.dart';
+import '../../../../core/icons/app_icons.dart';
+import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/app_text_field.dart';
+import '../controllers/claim_controller.dart';
 
 /// แสดง Modal Bottom Sheet "ยื่นสินไหม"
 /// เรียกจากหน้าแรก, รายละเอียดกรมธรรม์ และหน้าสินไหม
-/// [policyName] = ชื่อกรมธรรม์ที่จะยื่น (แสดงเป็นหัวข้อย่อย ถ้ามี)
-Future<void> showFileClaimSheet(BuildContext context, {String? policyName}) {
+/// [policyId] = กรมธรรม์ที่จะยื่น (จำเป็นต่อการยื่นผ่าน API), [policyName] = ชื่อแสดงผล
+Future<void> showFileClaimSheet(
+  BuildContext context, {
+  String? policyId,
+  String? policyName,
+}) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (_) => FileClaimSheet(policyName: policyName),
+    builder: (_) => FileClaimSheet(policyId: policyId, policyName: policyName),
   );
 }
 
-class FileClaimSheet extends StatefulWidget {
+class FileClaimSheet extends ConsumerStatefulWidget {
+  final String? policyId;
   final String? policyName;
-  const FileClaimSheet({super.key, this.policyName});
+  const FileClaimSheet({super.key, this.policyId, this.policyName});
 
   @override
-  State<FileClaimSheet> createState() => _FileClaimSheetState();
+  ConsumerState<FileClaimSheet> createState() => _FileClaimSheetState();
 }
 
-class _FileClaimSheetState extends State<FileClaimSheet> {
+class _FileClaimSheetState extends ConsumerState<FileClaimSheet> {
   final _amount = TextEditingController();
   final _reason = TextEditingController();
+
+  bool _submitting = false;
 
   // เลขอ้างอิงหลังยื่นสำเร็จ — ถ้ายังเป็น null แสดงฟอร์ม
   String? _claimRef;
@@ -44,16 +51,53 @@ class _FileClaimSheetState extends State<FileClaimSheet> {
     super.dispose();
   }
 
-  void _submit() {
-    final n = 10000 + Random().nextInt(90000);
-    setState(() => _claimRef = 'CLM-$n');
+  /// ยื่นสินไหมจริงผ่าน API (POST /policies/:id/claims) ด้วย ClaimController
+  Future<void> _submit() async {
+    final amount = double.tryParse(_amount.text.trim()) ?? 0;
+    if (amount <= 0) {
+      _toast('กรุณากรอกจำนวนเงินให้มากกว่า 0');
+      return;
+    }
+    setState(() => _submitting = true);
+
+    // Day 2: ถ้าเปิดจากหน้าสินไหมรวม (ไม่ระบุกรมธรรม์) ใช้ค่าเริ่มต้น P001 เพื่อสาธิต
+    // ผลลัพธ์ (สำเร็จ/พลาด) จะถูกจัดการผ่าน ref.listen ใน build() แทนการอ่าน state ตรงนี้
+    // เพราะ claimControllerProvider เป็น autoDispose — ถ้าไม่มีใคร watch/listen อยู่
+    // มันอาจถูก dispose ไปก่อนที่เราจะอ่านผลลัพธ์ทัน
+    await ref
+        .read(claimControllerProvider.notifier)
+        .submit(
+          policyId: widget.policyId ?? 'P001',
+          amount: amount,
+          reason: _reason.text.trim(),
+        );
+  }
+
+  void _toast(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   @override
   Widget build(BuildContext context) {
+    // ต้อง listen provider นี้ระหว่างที่ sheet ยังเปิดอยู่ ไม่งั้น autoDispose
+    // จะเคลียร์ผลลัพธ์ทิ้งก่อนที่ UI จะทันแสดงหน้า success
+    ref.listen<AsyncValue<String?>>(claimControllerProvider, (previous, next) {
+      next.whenOrNull(
+        data: (claimRef) {
+          if (claimRef == null) return;
+          setState(() {
+            _submitting = false;
+            _claimRef = claimRef;
+          });
+        },
+        error: (e, _) {
+          setState(() => _submitting = false);
+          _toast('ยื่นไม่สำเร็จ: $e');
+        },
+      );
+    });
+
     final media = MediaQuery.of(context);
-    // เผื่อพื้นที่ให้คีย์บอร์ดดันเนื้อหาขึ้น (viewInsets) และเผื่อแถบ
-    // navigation ของระบบ (padding.bottom) ไม่ให้ปุ่มถูกบดบัง
     final bottomInset = media.viewInsets.bottom + media.padding.bottom;
     return Container(
       decoration: const BoxDecoration(
@@ -65,7 +109,6 @@ class _FileClaimSheetState extends State<FileClaimSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // แถบจับลาก
           Center(
             child: Container(
               width: 44,
@@ -109,7 +152,10 @@ class _FileClaimSheetState extends State<FileClaimSheet> {
         controller: _reason,
       ),
       const SizedBox(height: 20),
-      AppButton.primary(label: 'ยืนยันการยื่น', onPressed: _submit),
+      AppButton.primary(
+        label: _submitting ? 'กำลังยื่น...' : 'ยืนยันการยื่น',
+        onPressed: _submitting ? null : _submit,
+      ),
     ];
   }
 

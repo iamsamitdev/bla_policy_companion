@@ -1,5 +1,8 @@
 // lib/features/policy/presentation/controllers/policy_list_controller.dart
+import 'dart:async';
+
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
 import '../../data/policy_repository.dart';
 import '../../domain/policy.dart';
 
@@ -21,11 +24,28 @@ class PolicyStatusFilter extends _$PolicyStatusFilter {
   void select(PolicyStatus? status) => state = status;
 }
 
-// 3) ดึงรายการกรมธรรม์ทั้งหมดจาก repository
+// 3) ดึงรายการกรมธรรม์ + Caching (keepAlive 5 นาที) + Pull-to-refresh
+//    เปลี่ยนจาก FutureProvider (Day 1) เป็น AsyncNotifier เพื่อรองรับ refresh()
+//    ชื่อ provider ที่ generate ยังเป็น `policyListProvider` เหมือนเดิม → UI ไม่ต้องแก้
 @riverpod
-Future<List<Policy>> policyList(Ref ref) async {
-  final repository = ref.watch(policyRepositoryProvider);
-  return repository.fetchPolicies();
+class PolicyList extends _$PolicyList {
+  @override
+  Future<List<Policy>> build() async {
+    // เก็บ cache 5 นาที ไม่ต้องโหลดซ้ำเมื่อสลับแท็บกลับมา
+    final link = ref.keepAlive();
+    final timer = Timer(const Duration(minutes: 5), link.close);
+    ref.onDispose(timer.cancel);
+
+    return ref.watch(policyRepositoryProvider).fetchPolicies();
+  }
+
+  /// Pull-to-refresh: บังคับดึงใหม่ทันที (กันพังด้วย AsyncValue.guard)
+  Future<void> refresh() async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(
+      () => ref.read(policyRepositoryProvider).fetchPolicies(),
+    );
+  }
 }
 
 // 4) รายการที่ "ผ่านการกรองแล้ว" — รวมข้อมูล + คำค้นหา + ตัวกรองสถานะ

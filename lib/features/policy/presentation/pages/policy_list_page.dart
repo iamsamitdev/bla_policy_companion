@@ -1,6 +1,7 @@
 // lib/features/policy/presentation/pages/policy_list_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:skeletonizer/skeletonizer.dart';
 
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -11,6 +12,7 @@ import '../../../../core/widgets/gradient_header.dart';
 import '../../../../core/widgets/status_badge.dart';
 import '../../domain/policy.dart';
 import '../controllers/policy_list_controller.dart';
+import 'policy_detail_page.dart';
 
 /// แปลงสถานะกรมธรรม์ → โทนสีของ badge (กฎการแสดงผลรวมไว้ที่เดียว)
 BadgeTone toneOf(PolicyStatus s) => switch (s) {
@@ -40,112 +42,151 @@ class PolicyListPage extends ConsumerWidget {
           subtitle: 'ทั้งหมด $total ฉบับ',
         ),
         Expanded(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-            children: [
-              // ช่องค้นหา
-              TextField(
-                onChanged: (v) =>
-                    ref.read(policySearchProvider.notifier).update(v),
-                decoration: const InputDecoration(
-                  prefixIcon: HugeIcon(
-                    icon: HugeIcons.strokeRoundedSearch01,
-                    color: AppColors.textSubtle,
-                  ),
-                  hintText: 'ค้นหาชื่อแผน หรือ เลขที่กรมธรรม์',
-                ),
-              ),
-              const SizedBox(height: 12),
-              // แถบกรองสถานะ
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    _Chip(
-                      label: 'ทั้งหมด',
-                      selected: selected == null,
-                      onTap: () => ref
-                          .read(policyStatusFilterProvider.notifier)
-                          .select(null),
+          // Pull-to-refresh: ลากลงเพื่อโหลดใหม่จาก API
+          child: RefreshIndicator(
+            onRefresh: () => ref.read(policyListProvider.notifier).refresh(),
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+              children: [
+                // ช่องค้นหา
+                TextField(
+                  onChanged: (v) =>
+                      ref.read(policySearchProvider.notifier).update(v),
+                  decoration: const InputDecoration(
+                    prefixIcon: HugeIcon(
+                      icon: HugeIcons.strokeRoundedSearch01,
+                      color: AppColors.textSubtle,
                     ),
-                    for (final s in PolicyStatus.values)
+                    hintText: 'ค้นหาชื่อแผน หรือ เลขที่กรมธรรม์',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // แถบกรองสถานะ
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
                       _Chip(
-                        label: s.label,
-                        selected: selected == s,
+                        label: 'ทั้งหมด',
+                        selected: selected == null,
                         onTap: () => ref
                             .read(policyStatusFilterProvider.notifier)
-                            .select(s),
+                            .select(null),
                       ),
-                  ],
+                      for (final s in PolicyStatus.values)
+                        _Chip(
+                          label: s.label,
+                          selected: selected == s,
+                          onTap: () => ref
+                              .read(policyStatusFilterProvider.notifier)
+                              .select(s),
+                        ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              // แถบเบี้ยรวม
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.infoBg,
-                  borderRadius: BorderRadius.circular(AppSpacing.rSm),
-                ),
-                child: Row(
-                  children: [
-                    const HugeIcon(
-                      icon: HugeIcons.strokeRoundedWallet01,
-                      size: 18,
-                      color: AppColors.infoText,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'เบี้ยรวม (มีผลบังคับ)',
-                      style: AppType.label.copyWith(color: AppColors.infoText),
-                    ),
-                    const Spacer(),
-                    Text(
-                      '฿${activePremium.toStringAsFixed(0)}/ปี',
-                      style: AppType.bodyStrong.copyWith(
+                const SizedBox(height: 12),
+                // แถบเบี้ยรวม
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.infoBg,
+                    borderRadius: BorderRadius.circular(AppSpacing.rSm),
+                  ),
+                  child: Row(
+                    children: [
+                      const HugeIcon(
+                        icon: HugeIcons.strokeRoundedWallet01,
+                        size: 18,
                         color: AppColors.infoText,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      Text(
+                        'เบี้ยรวม (มีผลบังคับ)',
+                        style: AppType.label.copyWith(
+                          color: AppColors.infoText,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        '฿${activePremium.toStringAsFixed(0)}/ปี',
+                        style: AppType.bodyStrong.copyWith(
+                          color: AppColors.infoText,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 14),
-              // เนื้อหา: loading / error / data
-              ...asyncPolicies.when(
-                loading: () => [
-                  const Center(
-                    child: Padding(
-                      padding: EdgeInsets.only(top: 40),
-                      child: CircularProgressIndicator(),
+                const SizedBox(height: 14),
+                // เนื้อหา: loading (skeleton) / error / data
+                ...asyncPolicies.when(
+                  // Skeleton Loading — แสดงโครงการ์ดปลอมระหว่างรอ API
+                  loading: () => List.generate(
+                    4,
+                    (_) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Skeletonizer(
+                        child: _PolicyCard(policy: PolicyFake.fake()),
+                      ),
                     ),
                   ),
-                ],
-                error: (e, _) => [Center(child: Text('เกิดข้อผิดพลาด: $e'))],
-                data: (_) => policies.isEmpty
-                    ? [
-                        const Padding(
-                          padding: EdgeInsets.only(top: 40),
-                          child: Center(
-                            child: Text('ไม่พบกรมธรรม์ที่ตรงเงื่อนไข'),
-                          ),
-                        ),
-                      ]
-                    : policies
-                          .map(
-                            (p) => Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: _PolicyCard(policy: p),
+                  error: (e, _) => [_ErrorBox(message: '$e', ref: ref)],
+                  data: (_) => policies.isEmpty
+                      ? [
+                          const Padding(
+                            padding: EdgeInsets.only(top: 40),
+                            child: Center(
+                              child: Text('ไม่พบกรมธรรม์ที่ตรงเงื่อนไข'),
                             ),
-                          )
-                          .toList(),
-              ),
-            ],
+                          ),
+                        ]
+                      : policies
+                            .map(
+                              (p) => Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: _PolicyCard(policy: p),
+                              ),
+                            )
+                            .toList(),
+                ),
+              ],
+            ),
           ),
         ),
       ],
+    );
+  }
+}
+
+/// กล่องแสดง error + ปุ่มลองใหม่
+class _ErrorBox extends StatelessWidget {
+  final String message;
+  final WidgetRef ref;
+  const _ErrorBox({required this.message, required this.ref});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 30),
+      child: Column(
+        children: [
+          const HugeIcon(
+            icon: HugeIcons.strokeRoundedAlert02,
+            size: 40,
+            color: AppColors.dangerFg,
+          ),
+          const SizedBox(height: 12),
+          Text(message, textAlign: TextAlign.center, style: AppType.body),
+          const SizedBox(height: 12),
+          OutlinedButton(
+            onPressed: () => ref.read(policyListProvider.notifier).refresh(),
+            child: const Text('ลองใหม่'),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -209,9 +250,8 @@ class _PolicyCard extends StatelessWidget {
     };
     return AppCard(
       padding: const EdgeInsets.all(14),
-      // โปรเจกต์จริง (branch day1) เปิดหน้า PolicyDetailPage แทน — ในเวิร์กช็อปนี้ใช้ SnackBar ให้รันได้ทันที
-      onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('เปิดกรมธรรม์ ${policy.policyNumber}')),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => PolicyDetailPage(policy: policy)),
       ),
       child: Row(
         children: [
