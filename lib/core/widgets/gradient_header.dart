@@ -7,6 +7,9 @@ import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
 
 /// หัวหน้าจอพื้น gradient น้ำเงิน มุมล่างโค้ง — ใช้ซ้ำเกือบทุกหน้า
+///
+/// ปรับแต่งได้: ปุ่มย้อนกลับ, title/subtitle, widget ท้าย (เช่น กระดิ่ง),
+/// หรือใส่ [child] เป็นเนื้อหา custom (เช่น โลโก้, การ์ดสรุป)
 class GradientHeader extends StatelessWidget {
   final String? title;
   final String? subtitle;
@@ -79,6 +82,16 @@ class GradientHeader extends StatelessWidget {
       ),
     );
   }
+}
+
+/// ปุ่มไอคอนวงกลมโปร่งแสง (ใช้บนหัว gradient เช่น back / กระดิ่ง)
+class CircleHeaderButton extends StatelessWidget {
+  final AppIconData icon;
+  final VoidCallback? onTap;
+  const CircleHeaderButton({super.key, required this.icon, this.onTap});
+
+  @override
+  Widget build(BuildContext context) => _CircleIcon(icon: icon, onTap: onTap);
 }
 
 class _CircleIcon extends StatelessWidget {
