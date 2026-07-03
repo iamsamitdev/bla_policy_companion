@@ -1,6 +1,6 @@
 # bla_policy_companion
 
-For Day 2
+For Day 2 Started
 
 ## Getting Started
 
